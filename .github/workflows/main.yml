@@ -1,4 +1,4 @@
-name: Build FlappyCoin APK
+name: Build FlappyCoin APK with Error Analysis
 
 on:
   push:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -38,22 +40,212 @@ jobs:
       - name: Grant permission
         run: chmod +x android/gradlew
 
-      - name: Build APK
-        working-directory: android
-        run: ./gradlew assembleDebug
-
-      - name: Verify APK
+      - name: Pre-build analysis (find problematic files)
+        id: analysis
         run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          if [ -f "$APK" ] && [ $(stat -c%s "$APK") -gt 100000 ]; then
-            echo "✅ APK généré avec succès ($(du -h $APK | cut -f1))"
+          echo "🔍 Analyse des fichiers Kotlin..."
+          
+          # 1. Trouver les fichiers avec 'message' non défini
+          echo "📋 Fichiers avec 'message' potentiellement non défini:"
+          grep -rn "Text(message)" --include="*.kt" android/app/src/main/java/ || echo "  Aucun trouvé"
+          
+          # 2. Trouver les when non exhaustifs
+          echo ""
+          echo "📋 Fichiers avec 'when' potentiellement non exhaustifs:"
+          grep -B5 -A10 "when.*{" --include="*.kt" android/app/src/main/java/ | grep -A5 "when" || echo "  Aucun trouvé"
+          
+          # 3. Trouver les Surface avec onClick
+          echo ""
+          echo "📋 Fichiers avec Surface(onClick=...):"
+          grep -rn "Surface.*onClick" --include="*.kt" android/app/src/main/java/ || echo "  Aucun trouvé"
+          
+          # 4. Trouver les problèmes PieceColor
+          echo ""
+          echo "📋 Fichiers comparant PieceColor avec String:"
+          grep -rn 'PieceColor.*==.*"' --include="*.kt" android/app/src/main/java/ || echo "  Aucun trouvé"
+          
+          # 5. Lister tous les fichiers Kotlin modifiés dans ce commit
+          echo ""
+          echo "📋 Fichiers Kotlin modifiés dans ce commit:"
+          git diff --name-only HEAD~1 HEAD 2>/dev/null | grep '\.kt$' || echo "  (premier commit ou aucun changement)"
+
+      - name: Build APK with detailed error reporting
+        id: build
+        working-directory: android
+        continue-on-error: true
+        run: |
+          ./gradlew assembleDebug --stacktrace > build.log 2>&1
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Parse and report errors
+        if: steps.build.outputs.exit_code != '0'
+        run: |
+          echo "❌ BUILD FAILED"
+          echo ""
+          
+          # Extraire les erreurs par fichier
+          echo "## 🔴 Erreurs détectées par fichier:" >> errors.md
+          echo "" >> errors.md
+          
+          # Erreur: Unresolved reference
+          grep -n "Unresolved reference" android/build.log | while read line; do
+            file=$(echo "$line" | grep -oP '(?<=file:///[^:]+:)[^:]+' | head -1)
+            line_num=$(echo "$line" | grep -oP ':\d+:' | tr -d ':')
+            echo "❌ **$file:$line_num** - Référence non résolue" >> errors.md
+          done
+          
+          # Erreur: when exhaustive
+          grep -n "'when' expression must be exhaustive" android/build.log | while read line; do
+            file=$(echo "$line" | grep -oP '(?<=file:///[^:]+:)[^:]+' | head -1)
+            line_num=$(echo "$line" | grep -oP ':\d+:' | tr -d ':')
+            echo "⚠️ **$file:$line_num** - 'when' non exhaustif" >> errors.md
+          done
+          
+          # Erreur: Surface onClick
+          grep -n "None of the following functions can be called" android/build.log -A2 | while read line; do
+            if echo "$line" | grep -q "Surface"; then
+              echo "🔘 **Surface avec onClick** - Utilisez Modifier.clickable à la place" >> errors.md
+            fi
+          done
+          
+          # Erreur: PieceColor type mismatch
+          grep -n "incompatible types" android/build.log | while read line; do
+            if echo "$line" | grep -q "PieceColor"; then
+              echo "🎨 **PieceColor** - Problème de typage" >> errors.md
+            fi
+          done
+          
+          # Afficher les 20 premières erreurs
+          echo ""
+          echo "📋 Extrait des erreurs (20 premières lignes):"
+          grep -E "(error:|Error:|e:)" android/build.log | head -20
+          
+          echo ""
+          echo "📁 Fichiers problématiques identifiés:"
+          grep -oP 'file:///[^:]+:\d+' android/build.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' | sort -u
+
+      - name: Upload error report
+        if: steps.build.outputs.exit_code != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: error-report
+          path: errors.md
+          retention-days: 7
+
+      - name: Upload full build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: android/build.log
+          retention-days: 7
+
+      - name: Upload problematic source files
+        if: steps.build.outputs.exit_code != '0'
+        run: |
+          mkdir problematic_files
+          # Copier les fichiers Kotlin qui ont des erreurs
+          grep -oP 'file:///[^:]+' android/build.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' | sort -u | while read file; do
+            if [ -f "$file" ]; then
+              cp "$file" problematic_files/
+              echo "📁 $file" >> problematic_files/README.md
+            fi
+          done
+          
+          # Ajouter le fichier GameAndPodiumScreens.kt s'il existe
+          if [ -f "android/app/src/main/java/com/ludomasterpro/ui/screens/GameAndPodiumScreens.kt" ]; then
+            cp "android/app/src/main/java/com/ludomasterpro/ui/screens/GameAndPodiumScreens.kt" problematic_files/
+          fi
+
+      - name: Upload problematic files
+        if: steps.build.outputs.exit_code != '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: problematic-files
+          path: problematic_files/
+          retention-days: 7
+
+      - name: Suggest fixes
+        if: steps.build.outputs.exit_code != '0'
+        run: |
+          echo ""
+          echo "🔧 CORRECTIONS SUGGÉRÉES:"
+          echo ""
+          
+          if grep -q "Unresolved reference: message" android/build.log; then
+            echo "📝 Pour 'Unresolved reference: message':"
+            echo "   - Assurez-vous que 'state.message' existe dans GameState"
+            echo "   - Ou utilisez Text(\"message par défaut\")"
+          fi
+          
+          if grep -q "'when' expression must be exhaustive" android/build.log; then
+            echo "📝 Pour 'when' non exhaustif:"
+            echo "   - Ajoutez tous les cas (RED, GREEN, BLUE, YELLOW)"
+            echo "   - Ou ajoutez une branche 'else'"
+          fi
+          
+          if grep -q "Surface.*onClick" android/build.log; then
+            echo "📝 Pour Surface avec onClick:"
+            echo "   - Remplacez par: Card(onClick = {...})"
+            echo "   - Ou utilisez: Surface(modifier = Modifier.clickable {...})"
+          fi
+
+      - name: Check specific file
+        id: check_file
+        run: |
+          FILE="android/app/src/main/java/com/ludomasterpro/ui/screens/GameAndPodiumScreens.kt"
+          if [ -f "$FILE" ]; then
+            echo "✅ Fichier GameAndPodiumScreens.kt trouvé"
+            
+            # Vérifier la présence de formatCDF
+            if ! grep -q "formatCDF" "$FILE"; then
+              echo "⚠️ Fonction formatCDF manquante"
+              echo "missing_formatCDF=true" >> $GITHUB_OUTPUT
+            fi
+            
+            # Vérifier les imports
+            if ! grep -q "import androidx.compose.animation.core.spring" "$FILE"; then
+              echo "⚠️ Import spring manquant"
+              echo "missing_spring_import=true" >> $GITHUB_OUTPUT
+            fi
           else
-            echo "❌ APK invalide ou trop petit"
-            exit 1
+            echo "❌ Fichier GameAndPodiumScreens.kt INTROUVABLE"
+            echo "file_missing=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Fix missing formatCDF
+        if: steps.check_file.outputs.missing_formatCDF == 'true'
+        run: |
+          echo "// Ajouter cette fonction dans GameAndPodiumScreens.kt" >> fix_suggestions.txt
+          echo "private fun formatCDF(amount: Double): String {" >> fix_suggestions.txt
+          echo "    return when {" >> fix_suggestions.txt
+          echo "        amount >= 1_000_000 -> String.format(\"%.2fM\", amount / 1_000_000)" >> fix_suggestions.txt
+          echo "        amount >= 1_000 -> String.format(\"%.2fK\", amount / 1_000)" >> fix_suggestions.txt
+          echo "        else -> String.format(\"%.0f\", amount)" >> fix_suggestions.txt
+          echo "    }" >> fix_suggestions.txt
+          echo "}" >> fix_suggestions.txt
+
+      - name: Upload fix suggestions
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix-suggestions
+          path: fix_suggestions.txt
+          retention-days: 7
+
+      - name: Build success
+        if: steps.build.outputs.exit_code == '0'
+        run: |
+          echo "✅ BUILD RÉUSSI !"
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ -f "$APK" ]; then
+            echo "📦 APK généré: $(du -h $APK | cut -f1)"
           fi
 
       - name: Upload APK
+        if: steps.build.outputs.exit_code == '0'
         uses: actions/upload-artifact@v4
         with:
-          name: FlappyCoin-APK
+          name: FlappyCoin-APK-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
