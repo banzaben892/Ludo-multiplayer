@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
@@ -13,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Java 17
         uses: actions/setup-java@v4
@@ -23,15 +28,138 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Grant permission to Gradle
-        run: chmod +x android/gradlew
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-      - name: Build Debug APK
-        working-directory: android
-        run: ./gradlew assembleDebug
+      - name: Validate Gradle Wrapper
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew wrapper --validate
+
+      - name: Check for common issues
+        id: checks
+        run: |
+          cd android
+          
+          # Vérifier les versions compatibles
+          echo "🔍 Vérification des versions..."
+          
+          # Vérifier minSdk vs targetSdk
+          MIN_SDK=$(grep -oP 'minSdkVersion \K\d+' app/build.gradle 2>/dev/null || echo "non trouvé")
+          TARGET_SDK=$(grep -oP 'targetSdkVersion \K\d+' app/build.gradle 2>/dev/null || echo "non trouvé")
+          
+          if [ "$MIN_SDK" != "non trouvé" ] && [ "$TARGET_SDK" != "non trouvé" ]; then
+            if [ $MIN_SDK -gt $TARGET_SDK ]; then
+              echo "❌ ERREUR: minSdkVersion ($MIN_SDK) > targetSdkVersion ($TARGET_SDK)"
+              exit 1
+            fi
+            echo "✅ Version SDK OK (min: $MIN_SDK, target: $TARGET_SDK)"
+          fi
+
+      - name: Clean build (optional)
+        run: |
+          cd android
+          ./gradlew clean
+
+      - name: Build Debug APK with error detection
+        id: build
+        run: |
+          cd android
+          
+          # Compilation avec logs détaillés
+          echo "🔨 Compilation en cours..."
+          if ! ./gradlew assembleDebug --stacktrace --info --no-daemon > build.log 2>&1; then
+            echo "❌ ÉCHEC DE LA COMPILATION"
+            echo ""
+            echo "📋 Extraire les erreurs principales..."
+            echo ""
+            
+            # Extraire les erreurs de compilation
+            grep -E "(error|Error|ERROR|FAILED|BUILD FAILED|Exception)" build.log | head -50 || true
+            echo ""
+            echo "⚠️ Erreur détaillée (dernières 30 lignes):"
+            tail -30 build.log
+            echo ""
+            echo "🔍 Types d'erreurs courantes détectées:"
+            
+            if grep -q "Unsupported class file major version" build.log; then
+              echo "  - Version Java incompatible"
+            fi
+            if grep -q "Failed to resolve" build.log; then
+              echo "  - Dépendance non résolue"
+            fi
+            if grep -q "minSdkVersion" build.log && grep -q "requires" build.log; then
+              echo "  - API niveau minimum trop bas"
+            fi
+            if grep -q "duplicate" build.log && grep -q "class" build.log; then
+              echo "  - Classe en double dans les dépendances"
+            fi
+            if grep -q "Android resource linking failed" build.log; then
+              echo "  - Erreur de ressource Android"
+            fi
+            if grep -q "Keystore was tampered with" build.log; then
+              echo "  - Problème de signature"
+            fi
+            if grep -q "Could not find.*\.xml" build.log; then
+              echo "  - Fichier de layout manquant"
+            fi
+            
+            exit 1
+          fi
+          
+          echo "✅ Build réussi !"
+
+      - name: Verify APK integrity
+        run: |
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          
+          if [ ! -f "$APK_PATH" ]; then
+            echo "❌ APK introuvable à: $APK_PATH"
+            exit 1
+          fi
+          
+          SIZE=$(du -h "$APK_PATH" | cut -f1)
+          echo "📦 Taille de l'APK: $SIZE"
+          
+          # Vérifier que l'APK n'est pas vide
+          if [ $(stat -c%s "$APK_PATH") -lt 1000 ]; then
+            echo "❌ APK trop petit (< 1KB) - probablement corrompu"
+            exit 1
+          fi
+          
+          # Vérifier si c'est une archive valide
+          if ! file "$APK_PATH" | grep -q "Zip archive data"; then
+            echo "❌ L'APK n'est pas une archive ZIP valide"
+            exit 1
+          fi
+          
+          echo "✅ APK valide"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlappyCoin-APK
+          name: FlappyCoin-APK-${{ github.run_number }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_number }}
+          path: android/build.log
+          retention-days: 7
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "⚠️ Le build a échoué ! Consultez les logs pour plus de détails."
+          # Optionnel: Ajouter un webhook Slack/Discord ici
