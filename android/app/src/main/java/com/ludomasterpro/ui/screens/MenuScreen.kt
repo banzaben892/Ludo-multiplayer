@@ -1,5 +1,6 @@
 package com.ludomasterpro.ui.screens
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -8,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.text.font.*
@@ -29,14 +31,16 @@ fun MenuScreen(
     onWallet:    () -> Unit,
     onLogin:     () -> Unit
 ) {
-    // Animation titre
+    // Animation titre - CORRIGÉ : animateColorAsState au lieu de animateColor
     val titleScale by rememberInfiniteTransition(label = "t").animateFloat(
         0.97f, 1.03f,
         infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ts"
     )
-    val titleColor by rememberInfiniteTransition(label = "c").animateColor(
-        LudoColors.Primary, Color(0xFFFF9500),
-        infiniteRepeatable(tween(1500), RepeatMode.Reverse), label = "tc"
+    
+    val titleColor by animateColorAsState(
+        targetValue = if (titleScale > 1.0f) Color(0xFFFF9500) else LudoColors.Primary,
+        animationSpec = tween(1500),
+        label = "tc"
     )
 
     Box(
@@ -60,8 +64,11 @@ fun MenuScreen(
 
             // ── Solde / Connexion ─────────────────────────────
             if (isLoggedIn) {
-                Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFF0A0A20),
-                        border = BorderStroke(1.dp, LudoColors.Primary.copy(0.4f))) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp), 
+                    color = Color(0xFF0A0A20),
+                    border = BorderStroke(1.dp, LudoColors.Primary.copy(alpha = 0.4f))
+                ) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -123,7 +130,7 @@ fun MenuScreen(
                                 onClick  = { onNbChange(n) },
                                 label    = { Text("$n joueurs") },
                                 colors   = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = LudoColors.Primary.copy(0.2f),
+                                    selectedContainerColor = LudoColors.Primary.copy(alpha = 0.2f),
                                     selectedLabelColor     = LudoColors.Primary
                                 )
                             )
@@ -164,12 +171,15 @@ fun MenuScreen(
 @Composable
 fun ModeCard(icon: String, title: String, subtitle: String,
              color: Color, onClick: () -> Unit, isPremium: Boolean = false) {
+    // CORRIGÉ : Surface avec modifier.clickable au lieu de Surface(onClick=...)
     Surface(
-        onClick  = onClick,
         shape    = RoundedCornerShape(16.dp),
-        color    = color.copy(0.12f),
-        border   = BorderStroke(1.5.dp, color.copy(0.6f)),
-        modifier = Modifier.fillMaxWidth()
+        color    = color.copy(alpha = 0.12f),
+        border   = BorderStroke(1.5.dp, color.copy(alpha = 0.6f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() }
     ) {
         Row(
             Modifier.padding(16.dp),
@@ -183,7 +193,7 @@ fun ModeCard(icon: String, title: String, subtitle: String,
                 Text(subtitle, fontSize = 12.sp, color = LudoColors.TextSub)
             }
             if (isPremium) {
-                Surface(RoundedCornerShape(8.dp), color = color.copy(0.25f)) {
+                Surface(RoundedCornerShape(8.dp), color = color.copy(alpha = 0.25f)) {
                     Text("💵", Modifier.padding(6.dp), fontSize = 18.sp)
                 }
             }
@@ -197,7 +207,8 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
                    onConfig: (Int, PlayerConfig) -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Text("${color.emoji} ${color.label}", fontSize = 13.sp,
              fontWeight = FontWeight.Bold, color = color.toCompose(),
@@ -214,7 +225,7 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
                 modifier        = Modifier.scale(0.75f),
                 colors          = SwitchDefaults.colors(
                     checkedThumbColor   = color.toCompose(),
-                    checkedTrackColor   = color.toCompose().copy(0.4f),
+                    checkedTrackColor   = color.toCompose().copy(alpha = 0.4f),
                     uncheckedThumbColor = LudoColors.TextDim
                 )
             )
@@ -225,18 +236,24 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
                 listOf(AiLevel.EASY to "😊", AiLevel.NORMAL to "🤖", AiLevel.EXPERT to "🧠")
                     .forEach { (lvl, ico) ->
                         Box(
-                            Modifier.size(28.dp)
+                            modifier = Modifier
+                                .size(28.dp)
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(if (cfg.aiLevel == lvl) color.toCompose().copy(0.25f)
+                                .background(if (cfg.aiLevel == lvl) color.toCompose().copy(alpha = 0.25f)
                                             else Color(0xFF0A0A1E))
                                 .border(1.dp,
                                         if (cfg.aiLevel == lvl) color.toCompose() else LudoColors.Border,
                                         RoundedCornerShape(6.dp))
                                 .clickable { onConfig(index, cfg.copy(aiLevel = lvl)) },
-                            Alignment.Center
+                            contentAlignment = Alignment.Center
                         ) { Text(ico, fontSize = 14.sp) }
                     }
             }
         }
     }
+}
+
+// Fonction utilitaire
+private fun formatCDF(amount: Double): String {
+    return String.format("%.2f", amount)
 }
