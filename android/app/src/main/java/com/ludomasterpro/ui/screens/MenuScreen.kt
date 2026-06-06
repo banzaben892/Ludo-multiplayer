@@ -17,6 +17,10 @@ import androidx.compose.ui.unit.*
 import com.ludomasterpro.engine.*
 import com.ludomasterpro.ui.theme.LudoColors
 
+// Couleurs locales (si LudoColors ne les a pas)
+private val Green = Color(0xFF4CAF50)
+private val TextDim = Color(0xFF888888)
+
 @Composable
 fun MenuScreen(
     nbPlayers:   Int,
@@ -31,7 +35,6 @@ fun MenuScreen(
     onWallet:    () -> Unit,
     onLogin:     () -> Unit
 ) {
-    // Animation titre - CORRIGÉ : animateColorAsState au lieu de animateColor
     val titleScale by rememberInfiniteTransition(label = "t").animateFloat(
         0.97f, 1.03f,
         infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ts"
@@ -55,14 +58,12 @@ fun MenuScreen(
         ) {
             Spacer(Modifier.height(16.dp))
 
-            // ── Logo ──────────────────────────────────────────
             Text("🎲", fontSize = 60.sp, modifier = Modifier.scale(titleScale))
             Text("LUDO MASTER PRO", fontSize = 24.sp,
                  fontWeight = FontWeight.ExtraBold,
                  fontFamily = FontFamily.Monospace, color = titleColor)
             Text("Le Ludo de compétition", fontSize = 12.sp, color = LudoColors.TextSub)
 
-            // ── Solde / Connexion ─────────────────────────────
             if (isLoggedIn) {
                 Surface(
                     shape = RoundedCornerShape(12.dp), 
@@ -91,20 +92,17 @@ fun MenuScreen(
                 }
             }
 
-            // ── Modes de jeu ──────────────────────────────────
             Text("MODE DE JEU", fontSize = 10.sp, color = LudoColors.TextSub,
                  letterSpacing = 2.sp, fontFamily = FontFamily.Monospace)
 
-            // Solo
             ModeCard(
                 icon        = "🎮",
                 title       = "Solo Classique",
                 subtitle    = "Jouez contre des IA",
-                color       = LudoColors.Green,
+                color       = Green,
                 onClick     = onStartSolo
             )
 
-            // Tournoi (si connecté)
             ModeCard(
                 icon        = "🏆",
                 title       = "Tournois",
@@ -115,14 +113,12 @@ fun MenuScreen(
                 isPremium   = true
             )
 
-            // ── Config Solo ───────────────────────────────────
             Surface(Modifier.fillMaxWidth(), RoundedCornerShape(16.dp),
                     Color(0xFF13132A), BorderStroke(1.dp, LudoColors.Border)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Text("CONFIGURATION SOLO", fontSize = 10.sp,
                          color = LudoColors.TextSub, letterSpacing = 1.sp, fontFamily = FontFamily.Monospace)
 
-                    // Nb joueurs
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(2, 3, 4).forEach { n ->
                             FilterChip(
@@ -137,7 +133,6 @@ fun MenuScreen(
                         }
                     }
 
-                    // Config par joueur
                     PieceColor.entries.take(nbPlayers).forEachIndexed { i, color ->
                         val cfg = configs.getOrNull(i) ?: return@forEachIndexed
                         PlayerQuickRow(i, color, cfg, onConfig)
@@ -145,7 +140,6 @@ fun MenuScreen(
                 }
             }
 
-            // ── Records ───────────────────────────────────────
             if (bestScores.isNotEmpty()) {
                 Surface(Modifier.fillMaxWidth(), RoundedCornerShape(14.dp),
                         Color(0xFF0A0A1E), BorderStroke(1.dp, LudoColors.Border)) {
@@ -171,7 +165,6 @@ fun MenuScreen(
 @Composable
 fun ModeCard(icon: String, title: String, subtitle: String,
              color: Color, onClick: () -> Unit, isPremium: Boolean = false) {
-    // CORRIGÉ : Surface avec modifier.clickable au lieu de Surface(onClick=...)
     Surface(
         shape    = RoundedCornerShape(16.dp),
         color    = color.copy(alpha = 0.12f),
@@ -211,10 +204,9 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
         modifier = Modifier.fillMaxWidth()
     ) {
         Text("${color.emoji} ${color.label}", fontSize = 13.sp,
-             fontWeight = FontWeight.Bold, color = color.toCompose(),
+             fontWeight = FontWeight.Bold, color = color.base(),
              modifier = Modifier.width(80.dp))
 
-        // Toggle IA / Humain
         Row(verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(if (cfg.type == PlayerType.HUMAN) "Humain" else "IA",
@@ -224,9 +216,9 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
                 onCheckedChange = { onConfig(index, cfg.copy(type = if (it) PlayerType.AI else PlayerType.HUMAN)) },
                 modifier        = Modifier.scale(0.75f),
                 colors          = SwitchDefaults.colors(
-                    checkedThumbColor   = color.toCompose(),
-                    checkedTrackColor   = color.toCompose().copy(alpha = 0.4f),
-                    uncheckedThumbColor = LudoColors.TextDim
+                    checkedThumbColor   = color.base(),
+                    checkedTrackColor   = color.base().copy(alpha = 0.4f),
+                    uncheckedThumbColor = TextDim
                 )
             )
         }
@@ -239,10 +231,10 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
                             modifier = Modifier
                                 .size(28.dp)
                                 .clip(RoundedCornerShape(6.dp))
-                                .background(if (cfg.aiLevel == lvl) color.toCompose().copy(alpha = 0.25f)
+                                .background(if (cfg.aiLevel == lvl) color.base().copy(alpha = 0.25f)
                                             else Color(0xFF0A0A1E))
                                 .border(1.dp,
-                                        if (cfg.aiLevel == lvl) color.toCompose() else LudoColors.Border,
+                                        if (cfg.aiLevel == lvl) color.base() else LudoColors.Border,
                                         RoundedCornerShape(6.dp))
                                 .clickable { onConfig(index, cfg.copy(aiLevel = lvl)) },
                             contentAlignment = Alignment.Center
@@ -253,7 +245,4 @@ fun PlayerQuickRow(index: Int, color: PieceColor, cfg: PlayerConfig,
     }
 }
 
-// Fonction utilitaire
-private fun formatCDF(amount: Double): String {
-    return String.format("%.2f", amount)
-}
+// Supprimé formatCDF car déjà dans AuthWalletLobby.kt
