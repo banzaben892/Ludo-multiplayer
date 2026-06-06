@@ -1,6 +1,7 @@
 package com.ludomasterpro.engine
 
 import kotlin.random.Random
+import androidx.compose.ui.graphics.Color
 
 // ══════════════════════════════════════════════════════════════
 //  LUDO MASTER PRO — Moteur de jeu complet et corrigé
@@ -217,7 +218,7 @@ object LudoRules {
                 val dist = ((ent - pos) + 52) % 52
                 if (dice > dist) {
                     for (i in 1..dist)         add((pos + i) % 52)
-                    for (j in 0..(dice-dist-1)) {
+                    for (j in 0 until (dice - dist)) {
                         val np = cs + j
                         if (np <= ce) add(np) else { add(ARRIVED); break }
                     }
@@ -258,7 +259,7 @@ object LudoRules {
                 val isSafe = finalPos < 0
                     || finalPos == Board.ARRIVED
                     || finalPos in Board.SAFE
-                    || finalPos >= Board.CORR_START[pl.color]!!
+                    || (finalPos >= (Board.CORR_START[pl.color] ?: 0))
                 if (isSafe) return@mapIndexed pl
 
                 val pieces = pl.pieces.map { p ->
@@ -294,7 +295,7 @@ object LudoRules {
         val nextTurn = if (replay) state.currentTurn else state.currentTurn + 1
 
         val msgs = buildList {
-            if (captureHappened) add("💥 Capture ${capturedColor?.emoji} !")
+            if (captureHappened) add("💥 Capture ${capturedColor?.emoji ?: ""} !")
             if (finalPos == Board.ARRIVED) add("🏆 Pion arrivé !")
             if (replay && phase != GamePhase.FINISHED)
                 add(if (state.dice == 6) "🎲 6 → Rejoue !" else "💥 Capture → Rejoue !")
@@ -312,7 +313,7 @@ object LudoRules {
             message    = msgs.joinToString(" "),
             history    = (state.history + HistoryEntry(
                 state.totalTurns, updated.name, updated.color,
-                state.dice, msgs.firstOrNull() ?: "→ ${finalPos}"
+                state.dice, msgs.firstOrNull() ?: "→ $finalPos"
             )).takeLast(80)
         )
     }
@@ -323,11 +324,14 @@ object LudoRules {
 
         return candidates.maxByOrNull { p ->
             var s = 0
-            if (p.atBase) { s = 12; return@maxByOrNull s }
+            if (p.atBase) { 
+                s = 12
+                return@maxByOrNull s
+            }
             val np = newPos(p, dice) ?: return@maxByOrNull -9999
             if (np == Board.ARRIVED) return@maxByOrNull 10000
 
-            s += if (np >= Board.CORR_START[p.color]!!) np + 300 else np
+            s += if (np >= (Board.CORR_START[p.color] ?: 0)) np + 300 else np
 
             for (other in all) {
                 if (other.color == player.color) continue
@@ -343,5 +347,28 @@ object LudoRules {
             }
             s
         } ?: candidates.first()
+    }
+}
+
+// ─── Fonctions utilitaires pour l'UI ─────────────────────────
+fun PieceColor.base(): Color {
+    return when (this) {
+        PieceColor.RED -> Color(0xFFE74C3C)
+        PieceColor.BLUE -> Color(0xFF2980B9)
+        PieceColor.GREEN -> Color(0xFF27AE60)
+        PieceColor.YELLOW -> Color(0xFFF39C12)
+    }
+}
+
+fun PieceColor.zone(): Color {
+    return this.base().copy(alpha = 0.25f)
+}
+
+fun PieceColor.dark(): Color {
+    return when (this) {
+        PieceColor.RED -> Color(0xFFC0392B)
+        PieceColor.BLUE -> Color(0xFF1A5276)
+        PieceColor.GREEN -> Color(0xFF1E8449)
+        PieceColor.YELLOW -> Color(0xFFD68910)
     }
 }
