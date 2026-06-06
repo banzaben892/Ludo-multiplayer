@@ -49,24 +49,29 @@ fun LudoApp(vm: GameViewModel) {
     // Compétitions simulées (à brancher sur votre API)
     val mockComps = remember {
         listOf(
-            CompetitionItem("1","Tournoi Vendredi 500",500.0,1800.0,2,4,"open", listOf(60,30,10)),
-            CompetitionItem("2","Duel Express 1000",1000.0,1800.0,1,2,"open",listOf(100)),
-            CompetitionItem("3","Grand Tournoi 5000",5000.0,18000.0,3,4,"open",listOf(60,30,10)),
+            CompetitionItem("1", "Tournoi Vendredi 500", 500.0, 1800.0, 2, 4, "open", listOf(60, 30, 10)),
+            CompetitionItem("2", "Duel Express 1000", 1000.0, 1800.0, 1, 2, "open", listOf(100)),
+            CompetitionItem("3", "Grand Tournoi 5000", 5000.0, 18000.0, 3, 4, "open", listOf(60, 30, 10)),
         )
     }
 
     when (screen) {
         Screen.AUTH -> AuthScreen(
             onLogin    = { email, pwd ->
-                authLoading = true; authError = ""
+                authLoading = true
+                authError = ""
                 // TODO: appeler AuthViewModel.login(email, pwd)
                 // Simulé :
-                isLoggedIn = true; screen = Screen.MENU; authLoading = false
+                isLoggedIn = true
+                screen = Screen.MENU
+                authLoading = false
             },
             onRegister = { user, email, phone, pwd ->
                 authLoading = true
                 // TODO: appeler AuthViewModel.register(...)
-                isLoggedIn = true; screen = Screen.MENU; authLoading = false
+                isLoggedIn = true
+                screen = Screen.MENU
+                authLoading = false
             },
             isLoading = authLoading,
             errorMsg  = authError
@@ -75,16 +80,16 @@ fun LudoApp(vm: GameViewModel) {
         Screen.WALLET -> WalletScreen(
             balance      = wallet,
             transactions = emptyList(), // TODO: brancher sur l'API
-            onDeposit  = { amt, phone, op ->
+            onDeposit    = { amt, phone, op ->
                 // TODO: appeler PaymentViewModel.deposit(...)
                 walletMsg = "✅ Demande de dépôt envoyée. Confirmez sur votre téléphone."
             },
-            onWithdraw = { amt, phone, op ->
+            onWithdraw   = { amt, phone, op ->
                 // TODO: appeler PaymentViewModel.withdraw(...)
                 walletMsg = "✅ Retrait en cours."
             },
-            onBack    = { screen = Screen.MENU },
-            message   = walletMsg
+            onBack       = { screen = Screen.MENU },
+            message      = walletMsg
         )
 
         Screen.LOBBY -> LobbyScreen(
@@ -92,14 +97,18 @@ fun LudoApp(vm: GameViewModel) {
             balance      = wallet,
             onJoin       = { comp, color ->
                 // TODO: appeler CompetitionViewModel.join(comp.id, color)
-                vm.startGame(prizePool = comp.prizePool, competitionId = comp.id)
+                vm.startGame(
+                    prizePool = comp.prizePool, 
+                    competitionId = comp.id
+                )
                 screen = Screen.GAME
             },
-            onRefresh = { /* TODO: recharger depuis l'API */ },
-            onBack    = { screen = Screen.MENU }
+            onRefresh    = { /* TODO: recharger depuis l'API */ },
+            onBack       = { screen = Screen.MENU }
         )
 
         Screen.GAME -> {
+            // Vérifier si la partie est terminée
             if (state.phase == GamePhase.FINISHED) {
                 screen = Screen.PODIUM
             } else {
@@ -107,7 +116,7 @@ fun LudoApp(vm: GameViewModel) {
                     state      = state,
                     onDiceRoll = vm::onDiceRolled,
                     onPiece    = vm::selectPiece,
-                    onApplyMove= vm::applyMove,
+                    onApplyMove = vm::applyMove,
                     onQuit     = { showQuit = true }
                 )
 
@@ -118,7 +127,9 @@ fun LudoApp(vm: GameViewModel) {
                         text    = { Text("La partie sera perdue.") },
                         confirmButton = {
                             TextButton(onClick = {
-                                showQuit = false; vm.goToMenu(); screen = Screen.MENU
+                                showQuit = false
+                                vm.goToMenu()
+                                screen = Screen.MENU
                             }) { Text("Quitter") }
                         },
                         dismissButton = {
@@ -134,8 +145,14 @@ fun LudoApp(vm: GameViewModel) {
             totalTurns = state.totalTurns,
             bestScores = bestScores,
             prizePool  = state.prizePool,
-            onReplay   = { vm.replayGame(); screen = Screen.GAME },
-            onMenu     = { vm.goToMenu(); screen = Screen.MENU }
+            onReplay   = { 
+                vm.replayGame()
+                screen = Screen.GAME 
+            },
+            onMenu     = { 
+                vm.goToMenu()
+                screen = Screen.MENU 
+            }
         )
 
         Screen.MENU -> MenuScreen(
@@ -146,7 +163,10 @@ fun LudoApp(vm: GameViewModel) {
             isLoggedIn  = isLoggedIn,
             onNbChange  = vm::setNbPlayers,
             onConfig    = vm::updateConfig,
-            onStartSolo = { vm.startGame(); screen = Screen.GAME },
+            onStartSolo = { 
+                vm.startGame()
+                screen = Screen.GAME 
+            },
             onLobby     = { screen = Screen.LOBBY },
             onWallet    = { screen = Screen.WALLET },
             onLogin     = { screen = Screen.AUTH }
