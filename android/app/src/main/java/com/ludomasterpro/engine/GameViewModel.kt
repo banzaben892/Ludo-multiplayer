@@ -89,24 +89,47 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Démarrer partie ───────────────────────────────────────
     fun startGame(prizePool: Double = 0.0, competitionId: String = "") {
-        val colors = PieceColor.entries
+        val colors = PieceColor.entries.toList()
         val players = (0 until _nbPlayers.value).map { i ->
-            val c = _configs.value[i]
-            Player(id = colors[i].name, name = c.name.ifBlank { colors[i].label },
-                color = colors[i], type = c.type, aiLevel = c.aiLevel,
-                bet = c.bet, userId = c.userId)
+            val c = _configs.value.getOrNull(i) ?: PlayerConfig()
+            Player(
+                id = colors[i].name, 
+                name = c.name.ifBlank { colors[i].label },
+                color = colors[i], 
+                type = c.type, 
+                aiLevel = c.aiLevel,
+                bet = c.bet, 
+                userId = c.userId
+            )
         }
-        _state.value = GameState(phase = GamePhase.PLAYING, players = players,
-            prizePool = prizePool, competitionId = competitionId)
+        _state.value = GameState(
+            phase = GamePhase.PLAYING, 
+            players = players,
+            prizePool = prizePool, 
+            competitionId = competitionId,
+            history = emptyList(),
+            ranking = emptyList(),
+            playableIds = emptyList(),
+            waitChoice = false,
+            animating = false,
+            message = "",
+            dice = 0,
+            currentTurn = 0,
+            totalTurns = 0
+        )
         viewModelScope.launch { delay(500); nextTurn() }
     }
 
     // ── Tour suivant ──────────────────────────────────────────
     private fun nextTurn() {
-        val s = _state.value; val p = s.current ?: return
+        val s = _state.value
+        val p = s.current ?: return
         _state.value = s.copy(
             message = if (p.type == PlayerType.HUMAN) "À vous de jouer !" else "",
-            waitChoice = false, playableIds = emptyList(), dice = 0
+            waitChoice = false, 
+            playableIds = emptyList(), 
+            dice = 0,
+            animating = false
         )
         if (p.type == PlayerType.AI) {
             viewModelScope.launch { delay(600); aiRollAndPlay() }
@@ -115,46 +138,64 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
 
     // ── Lancer de dé (résultat fourni par l'UI) ───────────────
     fun onDiceRolled(dice: Int) {
-        val s = _state.value; val p = s.current ?: return
+        val s = _state.value
+        val p = s.current ?: return
         val candidates = LudoRules.playable(p, dice)
         val hist = HistoryEntry(s.totalTurns, p.name, p.color, dice, "🎲 $dice")
 
         if (candidates.isEmpty()) {
-            _state.value = s.copy(dice = dice, message = "Aucun coup possible.",
+            _state.value = s.copy(
+                dice = dice, 
+                message = "Aucun coup possible.",
                 history = (s.history + hist).takeLast(80),
-                waitChoice = false, playableIds = emptyList())
+                waitChoice = false, 
+                playableIds = emptyList(),
+                animating = false
+            )
             viewModelScope.launch { delay(1300); advanceTurn() }
             return
         }
 
         if (p.type == PlayerType.AI) {
             val chosen = LudoRules.aiPick(p, candidates, s.players, dice)
-            _state.value = s.copy(dice = dice,
-                history    = (s.history + hist).takeLast(80),
+            _state.value = s.copy(
+                dice = dice,
+                history = (s.history + hist).takeLast(80),
                 playableIds = listOf(chosen.id),
-                animating  = true)
+                animating = true,
+                waitChoice = false,
+                message = ""
+            )
             return
         }
 
         if (candidates.size == 1) {
-            _state.value = s.copy(dice = dice,
-                history    = (s.history + hist).takeLast(80),
+            _state.value = s.copy(
+                dice = dice,
+                history = (s.history + hist).takeLast(80),
                 playableIds = listOf(candidates[0].id),
-                animating  = true)
+                animating = true,
+                waitChoice = false,
+                message = ""
+            )
             return
         }
 
-        _state.value = s.copy(dice = dice,
-            history    = (s.history + hist).takeLast(80),
+        _state.value = s.copy(
+            dice = dice,
+            history = (s.history + hist).takeLast(80),
             playableIds = candidates.map { it.id },
-            waitChoice  = true, message = "Choisissez un pion ↑")
+            waitChoice = true, 
+            message = "Choisissez un pion ↑",
+            animating = false
+        )
     }
 
     // ── Sélection pion (humain) ───────────────────────────────
     fun selectPiece(id: String) {
         val s = _state.value
         if (!s.waitChoice || id !in s.playableIds) return
-        _state.value = s.copy(animating = true, waitChoice = false)
+        _state.value = s.copy(animating = true, waitChoice = false, message = "")
     }
 
     // ── Fin animation → appliquer ─────────────────────────────
@@ -187,7 +228,14 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         repeat(s.players.size) {
             if (s.players[t % s.players.size].won) t++ else return@repeat
         }
-        _state.value = s.copy(currentTurn = t, dice = 0, message = "")
+        _state.value = s.copy(
+            currentTurn = t, 
+            dice = 0, 
+            message = "",
+            waitChoice = false,
+            playableIds = emptyList(),
+            animating = false
+        )
         nextTurn()
     }
 
@@ -198,6 +246,25 @@ class GameViewModel(app: Application) : AndroidViewModel(app) {
         onDiceRolled(dice)
     }
 
-    fun goToMenu()   { _state.value = GameState() }
-    fun replayGame() { startGame() }
+    fun goToMenu()   { 
+        _state.value = GameState(
+            phase = GamePhase.MENU,
+            players = emptyList(),
+            history = emptyList(),
+            ranking = emptyList(),
+            playableIds = emptyList(),
+            waitChoice = false,
+            animating = false,
+            message = "",
+            dice = 0,
+            currentTurn = 0,
+            totalTurns = 0,
+            prizePool = 0.0,
+            competitionId = ""
+        )
+    }
+    
+    fun replayGame() { 
+        startGame(_state.value.prizePool, _state.value.competitionId) 
+    }
 }
