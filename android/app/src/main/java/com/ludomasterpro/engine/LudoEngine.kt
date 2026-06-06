@@ -1,7 +1,6 @@
 package com.ludomasterpro.engine
 
 import kotlin.random.Random
-import androidx.compose.ui.graphics.Color
 
 // ══════════════════════════════════════════════════════════════
 //  LUDO MASTER PRO — Moteur de jeu complet et corrigé
@@ -143,7 +142,7 @@ data class GameState(
     val currentTurn:   Int               = 0,
     val dice:          Int               = 0,
     val totalTurns:    Int               = 0,
-    val history:       List<HistoryEntry>= emptyList(),
+    val history:       List<HistoryEntry> = emptyList(),
     val ranking:       List<Player>      = emptyList(),
     val playableIds:   List<String>      = emptyList(),
     val waitChoice:    Boolean           = false,
@@ -281,7 +280,7 @@ object LudoRules {
         }
 
         // Victoire ?
-        var ranking = state.ranking.toMutableList()
+        val ranking = state.ranking.toMutableList()
         var phase   = state.phase
         val updated = players[pi]
         if (updated.won && updated.rank == null) {
@@ -347,28 +346,5 @@ object LudoRules {
             }
             s
         } ?: candidates.first()
-    }
-}
-
-// ─── Fonctions utilitaires pour l'UI ─────────────────────────
-fun PieceColor.base(): Color {
-    return when (this) {
-        PieceColor.RED -> Color(0xFFE74C3C)
-        PieceColor.BLUE -> Color(0xFF2980B9)
-        PieceColor.GREEN -> Color(0xFF27AE60)
-        PieceColor.YELLOW -> Color(0xFFF39C12)
-    }
-}
-
-fun PieceColor.zone(): Color {
-    return this.base().copy(alpha = 0.25f)
-}
-
-fun PieceColor.dark(): Color {
-    return when (this) {
-        PieceColor.RED -> Color(0xFFC0392B)
-        PieceColor.BLUE -> Color(0xFF1A5276)
-        PieceColor.GREEN -> Color(0xFF1E8449)
-        PieceColor.YELLOW -> Color(0xFFD68910)
     }
 }
